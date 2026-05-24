@@ -17,6 +17,8 @@ class IncidentState(TypedDict):
     rag_context: str
     root_cause: str
     solution: str
+    confidence: str
+    test_scenario: str
     playwright_code: str
 
 # ==========================================
@@ -109,7 +111,8 @@ def root_cause_node(state: IncidentState):
         return {
             "rag_context": "[MOCK] [과거 티켓] 증상: 요청 조회 500 에러 / 원인: DB Connection Pool 고갈",
             "root_cause": "[MOCK] 과거 유사 인시던트 조회 결과, MariaDB 트랜잭션 락 또는 Connection Pool 고갈로 인한 백엔드 타임아웃이 발생했습니다.",
-            "solution": "[MOCK] DB Connection Pool의 max-lifetime을 1800000(30분)으로 조정하고, 타임아웃 발생 시 재시도(Retry) 로직을 추가해야 합니다."
+            "solution": "[MOCK] DB Connection Pool의 max-lifetime을 1800000(30분)으로 조정하고, 타임아웃 발생 시 재시도(Retry) 로직을 추가해야 합니다.",
+            "confidence": "95%"
         }
 
     # RAG: Triage가 뽑아준 키워드를 바탕으로 Vector DB 검색
@@ -135,11 +138,13 @@ def root_cause_node(state: IncidentState):
     return {
         "rag_context": rag_context,
         "root_cause": result.get("root_cause", "분석 실패"),
-        "solution": result.get("solution", "해결책 없음")
+        "solution": result.get("solution", "해결책 없음"),
+        "confidence": result.get("confidence", "N/A")
     }
 
 def qa_master_node(state: IncidentState):
     if USE_MOCK_LLM:
+        mock_scenario = "1. 브라우저 구동 후 localhost 진입\n2. 입력 폼에 더미 장애 증상 작성 후 전송\n3. 화면에 분석 결과(원인, 해결책 등)가 모두 렌더링되었는지 10초 내 확인"
         mock_code = """// [MOCK] Playwright Test Code
 import { test, expect } from '@playwright/test';
 
@@ -156,6 +161,7 @@ test('요청 등록 및 조회 라이프사이클 검증 테스트', async ({ pa
 });
 """
         return {
+            "test_scenario": mock_scenario,
             "playwright_code": mock_code
         }
 
@@ -172,6 +178,7 @@ test('요청 등록 및 조회 라이프사이클 검증 테스트', async ({ pa
     result = json.loads(response.content)
     
     return {
+        "test_scenario": result.get("test_scenario", "테스트 시나리오 생성 실패"),
         "playwright_code": result.get("playwright_code", "// Code generation failed")
     }
 

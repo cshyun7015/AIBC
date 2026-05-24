@@ -6,6 +6,8 @@ interface IncidentResponse {
   rag_context_used: string;
   root_cause: string;
   solution: string;
+  confidence: string;
+  test_scenario: string;
   qa_test_code: string;
 }
 
@@ -86,7 +88,7 @@ function App() {
       {result && (
         <section className="glass-panel result-grid">
           <div className="result-card">
-            <h3>🔍 분석 요약 <span className="badge">{result.layer} LAYER</span></h3>
+            <h3>🔍 분석 요약 <span className="badge">{result.layer} LAYER</span> <span className="badge" style={{backgroundColor: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', marginLeft: '8px'}}>{result.confidence} 확신도</span></h3>
             <p><strong>원인:</strong> {result.root_cause}</p>
           </div>
 
@@ -96,7 +98,8 @@ function App() {
           </div>
 
           <div className="result-card">
-            <h3>🤖 QA Master 검증 코드 (Playwright)</h3>
+            <h3>🤖 QA Master 검증 시나리오 및 코드</h3>
+            <p style={{whiteSpace: 'pre-line', marginBottom: '16px', lineHeight: '1.6', color: '#e2e8f0'}}>{result.test_scenario}</p>
             <pre><code>{result.qa_test_code}</code></pre>
           </div>
         </section>

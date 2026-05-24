@@ -13,6 +13,8 @@ class IncidentResponse(BaseModel):
     rag_context_used: str
     root_cause: str
     solution: str
+    confidence: str
+    test_scenario: str
     qa_test_code: str
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -52,6 +54,8 @@ async def analyze_incident(request: IncidentRequest):
             rag_context_used=final_state.get("rag_context", ""),
             root_cause=final_state.get("root_cause", ""),
             solution=final_state.get("solution", ""),
+            confidence=final_state.get("confidence", "N/A"),
+            test_scenario=final_state.get("test_scenario", ""),
             qa_test_code=final_state.get("playwright_code", "")
         )
         
