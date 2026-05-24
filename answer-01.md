@@ -78,7 +78,10 @@
 * [Graph State]를 중심으로 에이전트들이 통신:
 * ┌─▶ **[Triage Agent]** ──(Routing)──▶ **[Root-Cause Agent]** ◀──(RAG)── **[Vector DB (FAISS)]**
 * │                                         │
-* └───────────(Feedback Loop)◀───────── **[QA-Master Agent]** ### **3.3 서비스 플로우**
+* └───────────(Feedback Loop)◀───────── **[QA-Master Agent]**
+
+### **3.3 서비스 플로우**
+
 * 사용자 질문 ➔ LangGraph 진입 ➔ Triage 노드 실행 ➔ Root Cause 노드 실행 (RAG 검색 + Tool 실행) ➔ QA 노드 실행 (Playwright 코드 생성) ➔ 최종 Output JSON 반환 ➔ React UI 렌더링
 
 ---
