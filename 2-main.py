@@ -1,0 +1,58 @@
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
+from agent import itsm_agent_app  # 앞서 만든 에이전트 앱 임포트
+
+# ==========================================
+# 1. API 데이터 모델 (Pydantic)
+# ==========================================
+class IncidentRequest(BaseModel):
+    incident_report: str = Field(..., description="사용자가 입력한 장애 현상", example="요청 등록 후 조회 시 500 에러 발생")
+
+class IncidentResponse(BaseModel):
+    layer: str
+    rag_context_used: str
+    root_cause: str
+    solution: str
+    qa_test_code: str
+
+# ==========================================
+# 2. FastAPI 앱 초기화
+# ==========================================
+app = FastAPI(
+    title="AntiGravity ITSM Agent API",
+    description="장애 현상을 입력받아 원인 분석 및 테스트 코드를 생성하는 Multi-Agent 서비스",
+    version="1.0.0"
+)
+
+# ==========================================
+# 3. API 엔드포인트 라우팅
+# ==========================================
+@app.post("/api/v1/analyze-incident", response_model=IncidentResponse)
+async def analyze_incident(request: IncidentRequest):
+    try:
+        # LangGraph 에이전트 파이프라인 실행
+        print(f"🚀 [API 요청 수신] 인시던트 분석 시작: {request.incident_report}")
+        
+        # State 초기값으로 incident_report 전달
+        final_state = itsm_agent_app.invoke({"incident_report": request.incident_report})
+        
+        # 결과를 API 응답 규격에 맞게 매핑
+        return IncidentResponse(
+            layer=final_state.get("layer", "UNKNOWN"),
+            rag_context_used=final_state.get("rag_context", ""),
+            root_cause=final_state.get("root_cause", ""),
+            solution=final_state.get("solution", ""),
+            qa_test_code=final_state.get("playwright_code", "")
+        )
+        
+    except Exception as e:
+        print(f"❌ [에러 발생] {str(e)}")
+        raise HTTPException(status_code=500, detail=f"에이전트 실행 중 오류가 발생했습니다: {str(e)}")
+
+# ==========================================
+# 4. 서버 실행 가이드
+# ==========================================
+if __name__ == "__main__":
+    import uvicorn
+    # 터미널에서 `python main.py` 실행 시 8000 포트로 서버가 열립니다.
+    uvicorn.run(app, host="0.0.0.0", port=8000)
