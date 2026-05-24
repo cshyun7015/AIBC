@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from agent import itsm_agent_app  # 앞서 만든 에이전트 앱 임포트
+from app.agent import itsm_agent_app  # 앞서 만든 에이전트 앱 임포트
 
 # ==========================================
 # 1. API 데이터 모델 (Pydantic)
@@ -15,6 +15,8 @@ class IncidentResponse(BaseModel):
     solution: str
     qa_test_code: str
 
+from fastapi.middleware.cors import CORSMiddleware
+
 # ==========================================
 # 2. FastAPI 앱 초기화
 # ==========================================
@@ -22,6 +24,14 @@ app = FastAPI(
     title="AntiGravity ITSM Agent API",
     description="장애 현상을 입력받아 원인 분석 및 테스트 코드를 생성하는 Multi-Agent 서비스",
     version="1.0.0"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 실제 배포 시에는 프론트엔드 URL만 허용하도록 변경
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # ==========================================
