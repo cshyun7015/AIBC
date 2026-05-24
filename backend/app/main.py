@@ -59,6 +59,16 @@ async def analyze_incident(request: IncidentRequest):
         print(f"❌ [에러 발생] {str(e)}")
         raise HTTPException(status_code=500, detail=f"에이전트 실행 중 오류가 발생했습니다: {str(e)}")
 
+from fastapi.responses import FileResponse
+import os
+
+@app.get("/api/v1/graph-image")
+def get_graph_image():
+    image_path = os.path.join(os.path.dirname(__file__), "graph.png")
+    if os.path.exists(image_path):
+        return FileResponse(image_path, media_type="image/png")
+    raise HTTPException(status_code=404, detail="Image not generated yet")
+
 # ==========================================
 # 4. 서버 실행 가이드
 # ==========================================

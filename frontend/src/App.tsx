@@ -14,6 +14,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<IncidentResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showGraph, setShowGraph] = useState(false);
 
   const handleAnalyze = async () => {
     if (!incident.trim()) return;
@@ -47,9 +48,19 @@ function App() {
   return (
     <div className="container">
       <header className="header">
-        <h1>AntiGravity ITSM Agent</h1>
+        <h1>ITSM Agent</h1>
         <p>AI-Powered Incident Analysis & Resolution</p>
+        <button className="toggle-graph-btn" onClick={() => setShowGraph(!showGraph)}>
+          {showGraph ? '워크플로우 이미지 닫기' : '워크플로우 이미지 보기'}
+        </button>
       </header>
+
+      {showGraph && (
+        <section className="glass-panel graph-panel">
+          <h2>LangGraph Architecture</h2>
+          <img src="http://localhost:8000/api/v1/graph-image" alt="LangGraph Workflow" className="graph-image" />
+        </section>
+      )}
 
       <section className="glass-panel input-section">
         <textarea

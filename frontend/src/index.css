@@ -196,3 +196,37 @@ pre {
   border-radius: 8px;
   margin-top: 16px;
 }
+
+.toggle-graph-btn {
+  background: rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  margin-top: 16px;
+  transition: all 0.2s ease;
+}
+
+.toggle-graph-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.graph-panel {
+  text-align: center;
+  animation: fadeIn 0.3s ease;
+  margin-bottom: 24px;
+}
+
+.graph-panel h2 {
+  font-size: 1.2rem;
+  color: #cbd5e1;
+  margin-bottom: 16px;
+}
+
+.graph-image {
+  max-width: 100%;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}

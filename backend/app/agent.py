@@ -45,13 +45,33 @@ if not USE_MOCK_LLM:
         api_version="2023-05-15"
     )
 
-    # [가상의 RAG 환경 셋업] 
-    dummy_texts = [
-        "[티켓 #102] 증상: 요청 조회 500 에러 / 원인: DB Connection Pool 고갈 / 해결: max-lifetime 1800000으로 조정",
-        "[티켓 #088] 증상: 프론트엔드 로그인 무반응 / 원인: Redis 세션 만료 / 해결: 세션 타임아웃 연장",
-        "[가이드] MSA 환경에서 트랜잭션 락 발생 시 재시도 로직 구현 방법"
-    ]
-    vector_db = FAISS.from_texts(dummy_texts, embeddings)
+    # [RAG 환경 셋업 - PDF 로드 및 FAISS 로컬 저장소 활용]
+    import os
+    from langchain_community.document_loaders import PyPDFLoader
+    from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    faiss_index_path = os.path.join(base_dir, "faiss_index")
+    pdf_path = os.path.join(base_dir, "data", "incident_tickets_for_rag.pdf")
+
+    if os.path.exists(faiss_index_path):
+        print("✅ 기존 FAISS 인덱스를 로드합니다...")
+        vector_db = FAISS.load_local(faiss_index_path, embeddings, allow_dangerous_deserialization=True)
+    else:
+        print("🚀 PDF 파일을 읽어 새로운 FAISS 인덱스를 생성합니다...")
+        if not os.path.exists(pdf_path):
+            raise FileNotFoundError(f"PDF 파일을 찾을 수 없습니다: {pdf_path}")
+            
+        loader = PyPDFLoader(pdf_path)
+        docs = loader.load()
+        
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+        splits = text_splitter.split_documents(docs)
+        
+        vector_db = FAISS.from_documents(splits, embeddings)
+        vector_db.save_local(faiss_index_path)
+        print("✅ FAISS 인덱스 생성 및 로컬 저장이 완료되었습니다.")
+        
     retriever = vector_db.as_retriever(search_kwargs={"k": 2})
 else:
     llm = None
@@ -160,12 +180,22 @@ test('요청 등록 및 조회 라이프사이클 검증 테스트', async ({ pa
 # ==========================================
 workflow = StateGraph(IncidentState)
 workflow.add_node("triage", triage_node)
-workflow.add_node("root_cause", root_cause_node)
+workflow.add_node("root_cause_analysis", root_cause_node)
 workflow.add_node("qa_master", qa_master_node)
 
 workflow.set_entry_point("triage")
-workflow.add_edge("triage", "root_cause")
-workflow.add_edge("root_cause", "qa_master")
+workflow.add_edge("triage", "root_cause_analysis")
+workflow.add_edge("root_cause_analysis", "qa_master")
 workflow.add_edge("qa_master", END)
 
 itsm_agent_app = workflow.compile()
+
+# 워크플로우 이미지 생성 및 저장 (FastAPI 서빙용)
+try:
+    png_bytes = itsm_agent_app.get_graph().draw_mermaid_png()
+    graph_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "graph.png")
+    with open(graph_path, "wb") as f:
+        f.write(png_bytes)
+    print(f"✅ LangGraph 워크플로우 이미지가 생성되었습니다: {graph_path}")
+except Exception as e:
+    print(f"⚠️ LangGraph 워크플로우 이미지 생성 실패: {e}")
