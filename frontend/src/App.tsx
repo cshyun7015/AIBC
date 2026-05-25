@@ -7,6 +7,7 @@ interface IncidentResponse {
   root_cause: string;
   solution: string;
   confidence: string;
+  risk_level: string;
   test_scenario: string;
   qa_test_code: string;
 }
@@ -88,7 +89,7 @@ function App() {
       {result && (
         <section className="glass-panel result-grid">
           <div className="result-card">
-            <h3>🔍 분석 요약 <span className="badge">{result.layer} LAYER</span> <span className="badge" style={{backgroundColor: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', marginLeft: '8px'}}>{result.confidence} 확신도</span></h3>
+            <h3>🔍 분석 요약 <span className="badge">{result.layer} LAYER</span> <span className="badge" style={{backgroundColor: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', marginLeft: '8px'}}>{result.confidence} 확신도</span> <span className="badge" style={{backgroundColor: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', marginLeft: '8px'}}>{result.risk_level} RISK</span></h3>
             <p><strong>원인:</strong> {result.root_cause}</p>
           </div>
 

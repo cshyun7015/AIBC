@@ -18,6 +18,7 @@ class IncidentState(TypedDict):
     root_cause: str
     solution: str
     confidence: str
+    risk_level: str
     test_scenario: str
     playwright_code: str
 
@@ -112,7 +113,8 @@ def root_cause_node(state: IncidentState):
             "rag_context": "[MOCK] [과거 티켓] 증상: 요청 조회 500 에러 / 원인: DB Connection Pool 고갈",
             "root_cause": "[MOCK] 과거 유사 인시던트 조회 결과, MariaDB 트랜잭션 락 또는 Connection Pool 고갈로 인한 백엔드 타임아웃이 발생했습니다.",
             "solution": "[MOCK] DB Connection Pool의 max-lifetime을 1800000(30분)으로 조정하고, 타임아웃 발생 시 재시도(Retry) 로직을 추가해야 합니다.",
-            "confidence": "95%"
+            "confidence": "95%",
+            "risk_level": "High"
         }
 
     # RAG: Triage가 뽑아준 키워드를 바탕으로 Vector DB 검색
@@ -139,7 +141,8 @@ def root_cause_node(state: IncidentState):
         "rag_context": rag_context,
         "root_cause": result.get("root_cause", "분석 실패"),
         "solution": result.get("solution", "해결책 없음"),
-        "confidence": result.get("confidence", "N/A")
+        "confidence": str(result.get("confidence_score", result.get("confidence", "N/A"))),
+        "risk_level": result.get("risk_level", "Unknown")
     }
 
 def qa_master_node(state: IncidentState):
