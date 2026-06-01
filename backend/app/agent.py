@@ -1,5 +1,9 @@
 import os
 import json
+from dotenv import load_dotenv, find_dotenv
+
+# .env 파일 로드 (부모 디렉터리까지 탐색)
+load_dotenv(find_dotenv(), override=True)
 from typing import TypedDict, List
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
