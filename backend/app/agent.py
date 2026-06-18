@@ -32,13 +32,9 @@ class IncidentState(TypedDict, total=False):
     retry_count: int
 
 # ==========================================
-# Helper: 프롬프트 로드 및 파서
+# Helper: 프롬프트 임포트 및 파서
 # ==========================================
-def load_prompt(filename: str) -> str:
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    filepath = os.path.join(base_dir, "prompts", filename)
-    with open(filepath, "r", encoding="utf-8") as f:
-        return f.read().strip()
+from app.prompts import TRIAGE_AGENT_PROMPT, ROOT_CAUSE_AGENT_PROMPT, QA_MASTER_AGENT_PROMPT
 
 import re
 def robust_json_parse(content: str) -> dict:
@@ -316,7 +312,7 @@ def triage_node(state: IncidentState):
             "search_queries": ["500 에러", "요청 조회 실패"]
         }
         
-    sys_prompt = load_prompt("triage_agent.txt")
+    sys_prompt = TRIAGE_AGENT_PROMPT
     prompt = ChatPromptTemplate.from_messages([
         ("system", sys_prompt),
         ("user", "장애 현상: {incident}")
@@ -344,7 +340,7 @@ def root_cause_node(state: IncidentState):
 
     llm_with_tools = llm.bind_tools(tools) if not USE_MOCK_LLM else None
     
-    sys_prompt = load_prompt("root_cause_agent.txt")
+    sys_prompt = ROOT_CAUSE_AGENT_PROMPT
     
     if not messages or current_retry > 1 and not hasattr(messages[-1], 'type') or (messages and messages[-1].type != 'tool' and current_retry > state.get("retry_count", 0)):
         from langchain_core.messages import SystemMessage, HumanMessage
@@ -405,7 +401,7 @@ test('요청 등록 및 조회 라이프사이클 검증 테스트', async ({ pa
             "playwright_code": mock_code
         }
 
-    sys_prompt = load_prompt("qa_master_agent.txt")
+    sys_prompt = QA_MASTER_AGENT_PROMPT
     prompt = ChatPromptTemplate.from_messages([
         ("system", sys_prompt),
         ("user", "장애 현상: {incident}\n적용된 해결책: {solution}")
