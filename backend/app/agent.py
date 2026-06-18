@@ -200,12 +200,12 @@ test('요청 등록 및 조회 라이프사이클 검증 테스트', async ({ pa
 # ==========================================
 # 4. 그래프 컴파일 (FastAPI에서 호출할 객체)
 # ==========================================
-workflow = StateGraph(dict)
+workflow = StateGraph(IncidentState)
 workflow.add_node("triage", triage_node)
 workflow.add_node("root_cause_analysis", root_cause_node)
 workflow.add_node("qa_master", qa_master_node)
 
-workflow.add_edge(START, "triage")
+workflow.set_entry_point("triage")
 workflow.add_edge("triage", "root_cause_analysis")
 workflow.add_edge("root_cause_analysis", "qa_master")
 workflow.add_edge("qa_master", END)
