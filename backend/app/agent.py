@@ -59,7 +59,7 @@ if not USE_MOCK_LLM:
     # [RAG 환경 셋업 - PDF 로드 및 FAISS 로컬 저장소 활용]
     import os
     from langchain_community.document_loaders import PyPDFLoader
-    from langchain.text_splitter import RecursiveCharacterTextSplitter
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
 
     base_dir = os.path.dirname(os.path.abspath(__file__))
     faiss_index_path = os.path.join(base_dir, "faiss_index")
