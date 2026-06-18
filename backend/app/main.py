@@ -62,7 +62,10 @@ async def analyze_incident(request: IncidentRequest):
         )
         
     except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
         print(f"❌ [에러 발생] {str(e)}")
+        print(f"🔍 [상세 트레이스백]\n{error_trace}")
         raise HTTPException(status_code=500, detail=f"에이전트 실행 중 오류가 발생했습니다: {str(e)}")
 
 from fastapi.responses import FileResponse
