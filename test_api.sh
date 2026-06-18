@@ -4,6 +4,10 @@
 # AntiGravity ITSM Agent - API Test Script (cURL)
 # ==========================================
 
+# ./test_api.sh "데이터베이스 조회 시 타임아웃이 발생합니다. 커넥션 에러 같아요."
+# ./test_api.sh "요청 등록 후 DB 저장 시 무한 로딩이 돌면서 500 에러가 납니다."
+# ./test_api.sh "로그를 보니 DB 쪽에서 데드락(Deadlock)이 자꾸 발생하는 것 같습니다."
+
 API_URL="http://localhost:8000/api/v1/analyze-incident"
 IMAGE_API_URL="http://localhost:8000/api/v1/graph-image"
 INCIDENT_MSG="요청 등록 후 조회 시 500 에러 발생"
@@ -18,10 +22,13 @@ echo "▶️ 요청 주소: $API_URL"
 echo "▶️ 요청 데이터: {\"incident_report\": \"$INCIDENT_MSG\"}"
 echo "------------------------------------------------"
 
+# 매번 독립적인 테스트를 위해 랜덤 thread_id 생성
+RANDOM_THREAD="test-session-$RANDOM"
+
 # curl 실행
 RESPONSE=$(curl -s -X POST "$API_URL" \
   -H "Content-Type: application/json" \
-  -d "{\"incident_report\": \"$INCIDENT_MSG\", \"thread_id\": \"test-session-1\"}")
+  -d "{\"incident_report\": \"$INCIDENT_MSG\", \"thread_id\": \"$RANDOM_THREAD\"}")
 
 echo "📥 분석 결과:"
 # 시스템에 jq가 설치되어 있다면 JSON을 예쁘게 포맷팅하여 출력
