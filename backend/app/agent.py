@@ -42,12 +42,16 @@ USE_MOCK_LLM = os.getenv("USE_MOCK_LLM", "false").lower() == "true"
 
 if not USE_MOCK_LLM:
     llm = AzureChatOpenAI(
+        api_key=os.environ.get("AOAI_API_KEY"),
+        azure_endpoint=os.environ.get("AOAI_ENDPOINT"),
         azure_deployment=os.environ.get("AOAI_DEPLOY_GPT4O", "aitl-prd-gpt-4o"),
         api_version="2024-02-15-preview",
         temperature=0.2 
     ).bind(response_format={"type": "json_object"})
 
     embeddings = AzureOpenAIEmbeddings(
+        api_key=os.environ.get("AOAI_API_KEY"),
+        azure_endpoint=os.environ.get("AOAI_ENDPOINT"),
         azure_deployment=os.environ.get("AOAI_DEPLOY_EMBED_3_SMALL", "aitl-prd-text-embedding-3-small"),
         api_version="2023-05-15"
     )
