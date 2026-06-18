@@ -25,6 +25,7 @@ class IncidentState(TypedDict, total=False):
     risk_level: str
     test_scenario: str
     playwright_code: str
+    retry_count: int
 
 # ==========================================
 # Helper: 프롬프트 로드
@@ -127,9 +128,12 @@ def root_cause_node(state: IncidentState):
             "risk_level": "High"
         }
 
-    # RAG: Triage가 뽑아준 키워드를 바탕으로 Vector DB 검색
+    current_retry = state.get("retry_count", 0) + 1
+    
     search_queries = state.get("search_queries", [])
-    combined_query = " ".join(search_queries) if search_queries else state["incident_report"]
+    # 재시도 시 프롬프트를 약간 변형하거나 더 넓은 범위를 검색하도록 할 수 있습니다.
+    query_prefix = "심층 검색: " if current_retry > 1 else ""
+    combined_query = query_prefix + (" ".join(search_queries) if search_queries else state["incident_report"])
     
     docs = vector_db.similarity_search(combined_query, k=2)
     rag_context = "\n".join([f"- {doc.page_content}" for doc in docs])
@@ -149,11 +153,11 @@ def root_cause_node(state: IncidentState):
     result = json.loads(response.content)
     
     return {
-        "rag_context": rag_context,
-        "root_cause": result.get("root_cause", "분석 실패"),
-        "solution": result.get("solution", "해결책 없음"),
-        "confidence": str(result.get("confidence_score", result.get("confidence", "N/A"))),
-        "risk_level": result.get("risk_level", "Unknown")
+        "root_cause": result.get("root_cause", ""),
+        "solution": result.get("solution", ""),
+        "confidence": result.get("confidence", "0%"),
+        "risk_level": result.get("risk_level", "Unknown"),
+        "retry_count": current_retry
     }
 
 def qa_master_node(state: IncidentState):
@@ -193,9 +197,41 @@ test('요청 등록 및 조회 라이프사이클 검증 테스트', async ({ pa
     result = json.loads(response.content)
     
     return {
-        "test_scenario": result.get("test_scenario", "테스트 시나리오 생성 실패"),
-        "playwright_code": result.get("playwright_code", "// Code generation failed")
+        "test_scenario": result.get("test_scenario", ""),
+        "playwright_code": result.get("playwright_code", "")
     }
+
+def escalation_node(state: IncidentState):
+    return {
+        "root_cause": "자동 분석 실패",
+        "solution": "신뢰도가 너무 낮아 자동 분석을 완료할 수 없습니다. 수동 개입 및 추가 조사가 필요합니다.",
+        "risk_level": "Critical"
+    }
+
+# ==========================================
+# 3.5 조건부 라우팅 함수 (Conditional Edges)
+# ==========================================
+def route_after_triage(state: IncidentState) -> str:
+    layer = state.get("layer", "UNKNOWN")
+    if layer.upper() == "UNKNOWN":
+        return "escalation_node"
+    return "root_cause_analysis"
+
+def route_after_analysis(state: IncidentState) -> str:
+    import re
+    confidence_str = str(state.get("confidence", "0%"))
+    retry_count = state.get("retry_count", 0)
+    
+    # 숫자 파싱
+    digits = re.findall(r'\d+', confidence_str)
+    confidence = int(digits[0]) if digits else 0
+    
+    if confidence < 70 and retry_count < 2:
+        return "root_cause_analysis"
+    elif confidence < 70 and retry_count >= 2:
+        return "escalation_node"
+    else:
+        return "qa_master"
 
 # ==========================================
 # 4. 그래프 컴파일 (FastAPI에서 호출할 객체)
@@ -204,10 +240,12 @@ workflow = StateGraph(IncidentState)
 workflow.add_node("triage", triage_node)
 workflow.add_node("root_cause_analysis", root_cause_node)
 workflow.add_node("qa_master", qa_master_node)
+workflow.add_node("escalation_node", escalation_node)
 
 workflow.add_edge(START, "triage")
-workflow.add_edge("triage", "root_cause_analysis")
-workflow.add_edge("root_cause_analysis", "qa_master")
+workflow.add_conditional_edges("triage", route_after_triage)
+workflow.add_conditional_edges("root_cause_analysis", route_after_analysis)
+workflow.add_edge("escalation_node", END)
 workflow.add_edge("qa_master", END)
 
 itsm_agent_app = workflow.compile()
