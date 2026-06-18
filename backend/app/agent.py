@@ -330,10 +330,10 @@ def triage_node(state: IncidentState):
     }
 
 def root_cause_node(state: IncidentState):
-    messages = state.get("messages", [])
+    state_messages = state.get("messages", [])
     
     # 도구 응답 이후 재진입한 경우가 아니면 재시도 카운트 증가
-    if messages and hasattr(messages[-1], 'type') and messages[-1].type == 'tool':
+    if state_messages and hasattr(state_messages[-1], 'type') and state_messages[-1].type == 'tool':
         current_retry = state.get("retry_count", 0)
     else:
         current_retry = state.get("retry_count", 0) + 1
@@ -342,16 +342,20 @@ def root_cause_node(state: IncidentState):
     
     sys_prompt = ROOT_CAUSE_AGENT_PROMPT
     
-    if not messages or current_retry > 1 and not hasattr(messages[-1], 'type') or (messages and messages[-1].type != 'tool' and current_retry > state.get("retry_count", 0)):
-        from langchain_core.messages import SystemMessage, HumanMessage
-        # 만약 재시도라면 메시지 끝에 재분석 요청 추가
-        if current_retry > 1:
-            messages.append(HumanMessage(content="이전 분석 결과의 신뢰도가 낮습니다. 검색 도구나 로그 도구를 다시 활용하여 원인을 더 깊이 파악하고 JSON 형태로 다시 응답하세요."))
-        else:
-            messages = [
-                SystemMessage(content=sys_prompt),
-                HumanMessage(content=f"장애 현상: {state.get('incident_report')}\n분류 레이어: {state.get('layer')}\n\n* 지시사항: 필요한 경우 도구를 호출하여 원인을 분석하고, 최종 결과는 반드시 JSON 형태로 응답하세요. (키: root_cause, solution, confidence, risk_level)")
-            ]
+    from langchain_core.messages import SystemMessage, HumanMessage
+    
+    # 항상 최상단에 SystemMessage와 초기 HumanMessage를 배치합니다.
+    base_messages = [
+        SystemMessage(content=sys_prompt),
+        HumanMessage(content=f"장애 현상: {state.get('incident_report')}\n분류 레이어: {state.get('layer')}\n\n* 지시사항: 필요한 경우 도구를 호출하여 원인을 분석하고, 최종 결과는 반드시 JSON 형태로 응답하세요. (키: root_cause, solution, confidence, risk_level)")
+    ]
+    
+    # LangGraph State에 누적된 이전 대화(Tool calls 등)를 덧붙입니다.
+    invocation_messages = base_messages + state_messages
+    
+    # 단순 재시도(도구 호출 응답이 아님)인데 신뢰도가 낮아 다시 온 경우 피드백 메시지 추가
+    if current_retry > 1 and (not state_messages or state_messages[-1].type != 'tool'):
+        invocation_messages.append(HumanMessage(content="이전 분석 결과의 신뢰도가 낮거나 올바른 JSON 포맷이 아닙니다. 검색 도구(search_knowledge_base)나 로그 도구(check_server_logs, check_service_health)를 적극적으로 호출하여 데이터를 수집하고 확실한 원인을 파악하세요."))
 
     if USE_MOCK_LLM:
         return {
@@ -362,7 +366,7 @@ def root_cause_node(state: IncidentState):
             "retry_count": current_retry
         }
     
-    response = llm_with_tools.invoke(messages)
+    response = llm_with_tools.invoke(invocation_messages)
     
     if hasattr(response, 'tool_calls') and len(response.tool_calls) > 0:
         return {"messages": [response], "retry_count": current_retry}
