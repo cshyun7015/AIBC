@@ -80,8 +80,18 @@ if not USE_MOCK_LLM:
         loader = PyPDFLoader(pdf_path)
         docs = loader.load()
         
+        # [NEW] 데이터 정제 및 메타데이터 파싱 파이프라인
+        from app.preprocessing import DocumentPreprocessor
+        preprocessor = DocumentPreprocessor()
+        
+        # 1. 원본 텍스트 정제
+        docs = preprocessor.clean_documents(docs)
+        
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
         splits = text_splitter.split_documents(docs)
+        
+        # 2. 청크 단위 메타데이터 구조화
+        splits = preprocessor.extract_and_inject_metadata(splits)
         
         vector_db = FAISS.from_documents(splits, embeddings)
         vector_db.save_local(faiss_index_path)
@@ -101,7 +111,15 @@ def search_knowledge_base(query: str) -> str:
     if USE_MOCK_LLM or 'vector_db' not in globals():
         return "검색 결과 없음 (Mock 환경 또는 Vector DB 미연결)"
     docs = vector_db.similarity_search(query, k=2)
-    return "\n".join([f"- {doc.page_content}" for doc in docs])
+    
+    results = []
+    for doc in docs:
+        # source, page를 제외한 추출된 핵심 메타데이터만 문자열로 결합
+        meta_str = ", ".join([f"{k}: {v}" for k, v in doc.metadata.items() if k not in ['source', 'page']])
+        prefix = f"[{meta_str}]\n" if meta_str else ""
+        results.append(f"{prefix}- {doc.page_content}")
+        
+    return "\n\n".join(results)
 
 @tool
 def check_server_logs(layer: str) -> str:
