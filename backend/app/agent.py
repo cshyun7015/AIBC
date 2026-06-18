@@ -8,12 +8,12 @@ from typing import TypedDict, List
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
-from langgraph.graph import StateGraph, END
+from langgraph.graph import StateGraph, START, END
 
 # ==========================================
 # 1. 상태(State) 정의
 # ==========================================
-class IncidentState(TypedDict):
+class IncidentState(TypedDict, total=False):
     incident_report: str
     layer: str
     triage_reason: str
@@ -202,7 +202,7 @@ workflow.add_node("triage", triage_node)
 workflow.add_node("root_cause_analysis", root_cause_node)
 workflow.add_node("qa_master", qa_master_node)
 
-workflow.set_entry_point("triage")
+workflow.add_edge(START, "triage")
 workflow.add_edge("triage", "root_cause_analysis")
 workflow.add_edge("root_cause_analysis", "qa_master")
 workflow.add_edge("qa_master", END)
