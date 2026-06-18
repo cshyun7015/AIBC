@@ -32,13 +32,32 @@ class IncidentState(TypedDict, total=False):
     retry_count: int
 
 # ==========================================
-# Helper: 프롬프트 로드
+# Helper: 프롬프트 로드 및 파서
 # ==========================================
 def load_prompt(filename: str) -> str:
     base_dir = os.path.dirname(os.path.abspath(__file__))
     filepath = os.path.join(base_dir, "prompts", filename)
     with open(filepath, "r", encoding="utf-8") as f:
         return f.read().strip()
+
+import re
+def robust_json_parse(content: str) -> dict:
+    """LLM이 반환한 텍스트에서 안전하게 JSON을 추출 및 파싱합니다."""
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        try:
+            # 마크다운 JSON 블록 추출
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0].strip()
+                return json.loads(content)
+            # 순수 중괄호 영역 추출
+            match = re.search(r'\{.*\}', content, re.DOTALL)
+            if match:
+                return json.loads(match.group(0))
+        except:
+            pass
+        return {}
 
 # ==========================================
 # 2. LLM 및 RAG(Vector DB) 초기화
@@ -69,10 +88,18 @@ if not USE_MOCK_LLM:
     faiss_index_path = os.path.join(base_dir, "faiss_index")
     pdf_path = os.path.join(base_dir, "data", "incident_tickets_for_rag.pdf")
 
+    vector_db = None
     if os.path.exists(faiss_index_path):
         print("✅ 기존 FAISS 인덱스를 로드합니다...")
-        vector_db = FAISS.load_local(faiss_index_path, embeddings, allow_dangerous_deserialization=True)
-    else:
+        try:
+            vector_db = FAISS.load_local(faiss_index_path, embeddings, allow_dangerous_deserialization=True)
+        except Exception as e:
+            print(f"⚠️ FAISS 인덱스 로드 실패. 인덱스가 깨졌으므로 자동 재빌드합니다: {e}")
+            import shutil
+            shutil.rmtree(faiss_index_path, ignore_errors=True)
+            vector_db = None
+
+    if vector_db is None:
         print("🚀 PDF 파일을 읽어 새로운 FAISS 인덱스를 생성합니다...")
         if not os.path.exists(pdf_path):
             raise FileNotFoundError(f"PDF 파일을 찾을 수 없습니다: {pdf_path}")
@@ -298,7 +325,7 @@ def triage_node(state: IncidentState):
     # JSON 출력을 강제하여 파싱 오류 방지
     messages = prompt.format_messages(incident=state["incident_report"])
     response = llm.invoke(messages)
-    result = json.loads(response.content)
+    result = robust_json_parse(response.content)
     
     return {
         "layer": result.get("layer", "UNKNOWN"),
@@ -344,13 +371,7 @@ def root_cause_node(state: IncidentState):
     if hasattr(response, 'tool_calls') and len(response.tool_calls) > 0:
         return {"messages": [response], "retry_count": current_retry}
     
-    try:
-        content = response.content
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0].strip()
-        result = json.loads(content)
-    except:
-        result = {}
+    result = robust_json_parse(response.content)
     
     return {
         "messages": [response],
@@ -395,7 +416,7 @@ test('요청 등록 및 조회 라이프사이클 검증 테스트', async ({ pa
         solution=state["solution"]
     )
     response = llm.invoke(messages)
-    result = json.loads(response.content)
+    result = robust_json_parse(response.content)
     
     return {
         "test_scenario": result.get("test_scenario", ""),
