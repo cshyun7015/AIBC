@@ -1,19 +1,23 @@
 import os
 import json
 from dotenv import load_dotenv, find_dotenv
-
-# .env 파일 로드 (부모 디렉터리까지 탐색)
-load_dotenv(find_dotenv(), override=True)
-from typing import TypedDict, List
+from typing import TypedDict, List, Annotated
+from langgraph.graph.message import add_messages
+from langchain_core.tools import tool
+from langgraph.prebuilt import ToolNode
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
 from langgraph.graph import StateGraph, START, END
 
+# .env 파일 로드 (부모 디렉터리까지 탐색)
+load_dotenv(find_dotenv(), override=True)
+
 # ==========================================
 # 1. 상태(State) 정의
 # ==========================================
 class IncidentState(TypedDict, total=False):
+    messages: Annotated[list, add_messages]
     incident_report: str
     layer: str
     triage_reason: str
@@ -58,7 +62,6 @@ if not USE_MOCK_LLM:
     )
 
     # [RAG 환경 셋업 - PDF 로드 및 FAISS 로컬 저장소 활용]
-    import os
     from langchain_community.document_loaders import PyPDFLoader
     from langchain_text_splitters import RecursiveCharacterTextSplitter
 
@@ -90,6 +93,24 @@ else:
     retriever = None
 
 # ==========================================
+# 2. 도구(Tools) 정의
+# ==========================================
+@tool
+def search_knowledge_base(query: str) -> str:
+    """과거 장애 처리 이력, 가이드라인 등 지식베이스를 검색합니다."""
+    if USE_MOCK_LLM or 'vector_db' not in globals():
+        return "검색 결과 없음 (Mock 환경 또는 Vector DB 미연결)"
+    docs = vector_db.similarity_search(query, k=2)
+    return "\n".join([f"- {doc.page_content}" for doc in docs])
+
+@tool
+def check_server_logs(layer: str) -> str:
+    """특정 레이어(BACKEND, DB 등)의 최근 에러 로그를 조회합니다."""
+    return f"[{layer}] Error 500: Database connection timeout at 10:24 AM."
+
+tools = [search_knowledge_base, check_server_logs]
+
+# ==========================================
 # 3. 에이전트(Nodes) 정의
 # ==========================================
 def triage_node(state: IncidentState):
@@ -119,43 +140,56 @@ def triage_node(state: IncidentState):
     }
 
 def root_cause_node(state: IncidentState):
-    if USE_MOCK_LLM:
-        return {
-            "rag_context": "[MOCK] [과거 티켓] 증상: 요청 조회 500 에러 / 원인: DB Connection Pool 고갈",
-            "root_cause": "[MOCK] 과거 유사 인시던트 조회 결과, MariaDB 트랜잭션 락 또는 Connection Pool 고갈로 인한 백엔드 타임아웃이 발생했습니다.",
-            "solution": "[MOCK] DB Connection Pool의 max-lifetime을 1800000(30분)으로 조정하고, 타임아웃 발생 시 재시도(Retry) 로직을 추가해야 합니다.",
-            "confidence": "95%",
-            "risk_level": "High"
-        }
+    messages = state.get("messages", [])
+    
+    # 도구 응답 이후 재진입한 경우가 아니면 재시도 카운트 증가
+    if messages and hasattr(messages[-1], 'type') and messages[-1].type == 'tool':
+        current_retry = state.get("retry_count", 0)
+    else:
+        current_retry = state.get("retry_count", 0) + 1
 
-    current_retry = state.get("retry_count", 0) + 1
-    
-    search_queries = state.get("search_queries", [])
-    # 재시도 시 프롬프트를 약간 변형하거나 더 넓은 범위를 검색하도록 할 수 있습니다.
-    query_prefix = "심층 검색: " if current_retry > 1 else ""
-    combined_query = query_prefix + (" ".join(search_queries) if search_queries else state["incident_report"])
-    
-    docs = vector_db.similarity_search(combined_query, k=2)
-    rag_context = "\n".join([f"- {doc.page_content}" for doc in docs])
+    llm_with_tools = llm.bind_tools(tools) if not USE_MOCK_LLM else None
     
     sys_prompt = load_prompt("root_cause_agent.txt")
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", sys_prompt),
-        ("user", "장애 현상: {incident}\n분류 레이어: {layer}\n[과거 인시던트 및 가이드 검색 결과]\n{context}")
-    ])
     
-    messages = prompt.format_messages(
-        incident=state["incident_report"], 
-        layer=state["layer"], 
-        context=rag_context
-    )
-    response = llm.invoke(messages)
-    result = json.loads(response.content)
+    if not messages or current_retry > 1 and not hasattr(messages[-1], 'type') or (messages and messages[-1].type != 'tool' and current_retry > state.get("retry_count", 0)):
+        from langchain_core.messages import SystemMessage, HumanMessage
+        # 만약 재시도라면 메시지 끝에 재분석 요청 추가
+        if current_retry > 1:
+            messages.append(HumanMessage(content="이전 분석 결과의 신뢰도가 낮습니다. 검색 도구나 로그 도구를 다시 활용하여 원인을 더 깊이 파악하고 JSON 형태로 다시 응답하세요."))
+        else:
+            messages = [
+                SystemMessage(content=sys_prompt),
+                HumanMessage(content=f"장애 현상: {state.get('incident_report')}\n분류 레이어: {state.get('layer')}\n\n* 지시사항: 필요한 경우 도구를 호출하여 원인을 분석하고, 최종 결과는 반드시 JSON 형태로 응답하세요. (키: root_cause, solution, confidence, risk_level)")
+            ]
+
+    if USE_MOCK_LLM:
+        return {
+            "root_cause": "[MOCK] DB 커넥션 풀 고갈",
+            "solution": "[MOCK] DB 커넥션 풀을 늘리거나 재시작합니다.",
+            "confidence": "85%",
+            "risk_level": "High",
+            "retry_count": current_retry
+        }
+    
+    response = llm_with_tools.invoke(messages)
+    
+    if hasattr(response, 'tool_calls') and len(response.tool_calls) > 0:
+        return {"messages": [response], "retry_count": current_retry}
+    
+    try:
+        content = response.content
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        result = json.loads(content)
+    except:
+        result = {}
     
     return {
-        "root_cause": result.get("root_cause", ""),
-        "solution": result.get("solution", ""),
-        "confidence": result.get("confidence", "0%"),
+        "messages": [response],
+        "root_cause": result.get("root_cause", "파싱 실패"),
+        "solution": result.get("solution", "파싱 실패"),
+        "confidence": str(result.get("confidence", "0%")),
         "risk_level": result.get("risk_level", "Unknown"),
         "retry_count": current_retry
     }
@@ -233,18 +267,26 @@ def route_after_analysis(state: IncidentState) -> str:
     else:
         return "qa_master"
 
+def custom_tools_condition(state: IncidentState) -> str:
+    messages = state.get("messages", [])
+    if messages and hasattr(messages[-1], 'tool_calls') and len(messages[-1].tool_calls) > 0:
+        return "tools"
+    return route_after_analysis(state)
+
 # ==========================================
 # 4. 그래프 컴파일 (FastAPI에서 호출할 객체)
 # ==========================================
 workflow = StateGraph(IncidentState)
 workflow.add_node("triage", triage_node)
 workflow.add_node("root_cause_analysis", root_cause_node)
+workflow.add_node("tools", ToolNode(tools))
 workflow.add_node("qa_master", qa_master_node)
 workflow.add_node("escalation_node", escalation_node)
 
 workflow.add_edge(START, "triage")
 workflow.add_conditional_edges("triage", route_after_triage)
-workflow.add_conditional_edges("root_cause_analysis", route_after_analysis)
+workflow.add_conditional_edges("root_cause_analysis", custom_tools_condition)
+workflow.add_edge("tools", "root_cause_analysis")
 workflow.add_edge("escalation_node", END)
 workflow.add_edge("qa_master", END)
 
