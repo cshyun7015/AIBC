@@ -105,21 +105,77 @@ else:
 # ==========================================
 # 2. 도구(Tools) 정의
 # ==========================================
+from typing import Optional
+
 @tool
-def search_knowledge_base(query: str) -> str:
-    """과거 장애 처리 이력, 가이드라인 등 지식베이스를 검색합니다."""
+def search_knowledge_base(query: str, layer_filter: Optional[str] = None) -> str:
+    """
+    과거 장애 처리 이력을 검색합니다. 
+    layer_filter: 특정 계층(BACKEND, DB, FRONTEND 등)의 문서만 필터링하고 싶을 때 입력합니다.
+    """
     if USE_MOCK_LLM or 'vector_db' not in globals():
         return "검색 결과 없음 (Mock 환경 또는 Vector DB 미연결)"
-    docs = vector_db.similarity_search(query, k=2)
+        
+    print(f"▶️ [DEBUG] RAG Search Initiated | Query: {query} | Filter: {layer_filter}")
+
+    # 1. Query Expansion (LLM을 이용해 동의어/연관 검색어 생성)
+    expanded_queries = [query]
+    try:
+        expansion_prompt = f"다음 검색어와 관련된 동의어나 장애 시스템 로그 키워드를 2개만 콤마로 구분해서 작성해줘: {query}\n답변 예시: 키워드1, 키워드2"
+        from langchain_core.messages import HumanMessage
+        expansion_res = llm.invoke([HumanMessage(content=expansion_prompt)])
+        extra_queries = [q.strip() for q in expansion_res.content.split(",") if q.strip()]
+        expanded_queries.extend(extra_queries[:2]) # 최대 2개 추가
+    except Exception as e:
+        print(f"⚠️ [DEBUG] Query Expansion Failed: {e}")
+
+    print(f"▶️ [DEBUG] Expanded Queries: {expanded_queries}")
+
+    # 2. 멀티 쿼리 검색, Score Threshold, Metadata Filtering 적용
+    # L2 Distance threshold: 작을수록 유사함. 보통 1.0~1.2 사이를 기준으로 삼습니다.
+    threshold = 1.2 
+    filter_dict = {"layer": layer_filter} if layer_filter else {}
     
+    def execute_search(queries, search_filter, max_distance):
+        temp_results = {}
+        for q in queries:
+            try:
+                # k=5로 넉넉하게 뽑은 뒤 필터링
+                docs_and_scores = vector_db.similarity_search_with_score(q, k=5, filter=search_filter)
+                for doc, distance in docs_and_scores:
+                    distance = float(distance)
+                    if distance <= max_distance:
+                        # 중복 문서 제거 (더 작은 거리(점수)를 가진 결과만 유지)
+                        if doc.page_content not in temp_results or temp_results[doc.page_content][1] > distance:
+                            temp_results[doc.page_content] = (doc, distance)
+            except Exception as e:
+                print(f"⚠️ [DEBUG] Search Error for '{q}': {e}")
+        return temp_results
+
+    all_results = execute_search(expanded_queries, filter_dict, threshold)
+
+    # 3. Fallback Retrieval (검색 결과가 없으면 필터 해제 및 임계치 완화)
+    if not all_results:
+        print("⚠️ [DEBUG] No results with high confidence. Triggering Fallback Retrieval...")
+        all_results = execute_search(expanded_queries, {}, 1.6)
+
+    if not all_results:
+        return "검색 결과가 없습니다. 다른 키워드나 넓은 범위로 다시 검색해주세요."
+
+    # 4. Reranking (점수순 오름차순 정렬 후 Top 3 추출)
+    sorted_docs = sorted(all_results.values(), key=lambda x: x[1])
+    top_docs = [item[0] for item in sorted_docs[:3]]
+
+    # 5. 결과 반환 (메타데이터 포함)
     results = []
-    for doc in docs:
-        # source, page를 제외한 추출된 핵심 메타데이터만 문자열로 결합
+    for doc in top_docs:
         meta_str = ", ".join([f"{k}: {v}" for k, v in doc.metadata.items() if k not in ['source', 'page']])
         prefix = f"[{meta_str}]\n" if meta_str else ""
         results.append(f"{prefix}- {doc.page_content}")
         
-    return "\n\n".join(results)
+    final_output = "\n\n".join(results)
+    print(f"▶️ [DEBUG] Search complete. Returned {len(top_docs)} docs.")
+    return final_output
 
 @tool
 def check_server_logs(layer: str) -> str:
