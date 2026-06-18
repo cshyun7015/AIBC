@@ -107,7 +107,8 @@ def triage_node(state: IncidentState):
     ])
     
     # JSON 출력을 강제하여 파싱 오류 방지
-    response = (prompt | llm).invoke({"incident": state["incident_report"]})
+    messages = prompt.format_messages(incident=state["incident_report"])
+    response = llm.invoke(messages)
     result = json.loads(response.content)
     
     return {
@@ -130,7 +131,7 @@ def root_cause_node(state: IncidentState):
     search_queries = state.get("search_queries", [])
     combined_query = " ".join(search_queries) if search_queries else state["incident_report"]
     
-    docs = retriever.invoke(combined_query)
+    docs = vector_db.similarity_search(combined_query, k=2)
     rag_context = "\n".join([f"- {doc.page_content}" for doc in docs])
     
     sys_prompt = load_prompt("root_cause_agent.txt")
@@ -139,11 +140,12 @@ def root_cause_node(state: IncidentState):
         ("user", "장애 현상: {incident}\n분류 레이어: {layer}\n[과거 인시던트 및 가이드 검색 결과]\n{context}")
     ])
     
-    response = (prompt | llm).invoke({
-        "incident": state["incident_report"], 
-        "layer": state["layer"], 
-        "context": rag_context
-    })
+    messages = prompt.format_messages(
+        incident=state["incident_report"], 
+        layer=state["layer"], 
+        context=rag_context
+    )
+    response = llm.invoke(messages)
     result = json.loads(response.content)
     
     return {
@@ -183,10 +185,11 @@ test('요청 등록 및 조회 라이프사이클 검증 테스트', async ({ pa
         ("user", "장애 현상: {incident}\n적용된 해결책: {solution}")
     ])
     
-    response = (prompt | llm).invoke({
-        "incident": state["incident_report"], 
-        "solution": state["solution"]
-    })
+    messages = prompt.format_messages(
+        incident=state["incident_report"], 
+        solution=state["solution"]
+    )
+    response = llm.invoke(messages)
     result = json.loads(response.content)
     
     return {

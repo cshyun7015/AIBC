@@ -41,7 +41,7 @@ app.add_middleware(
 # 3. API 엔드포인트 라우팅
 # ==========================================
 @app.post("/api/v1/analyze-incident", response_model=IncidentResponse)
-async def analyze_incident(request: IncidentRequest):
+def analyze_incident(request: IncidentRequest):
     try:
         # LangGraph 에이전트 파이프라인 실행
         print(f"🚀 [API 요청 수신] 인시던트 분석 시작: {request.incident_report}")
