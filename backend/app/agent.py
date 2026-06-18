@@ -1,10 +1,10 @@
 import os
 import json
 from dotenv import load_dotenv, find_dotenv
-from typing import TypedDict, List, Annotated
 from langgraph.graph.message import add_messages
 from langchain_core.tools import tool
 from langchain_core.prompts import ChatPromptTemplate
+from langgraph.checkpoint.memory import MemorySaver
 from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
 from langgraph.graph import StateGraph, START, END
@@ -321,7 +321,8 @@ workflow.add_edge("tools", "root_cause_analysis")
 workflow.add_edge("escalation_node", END)
 workflow.add_edge("qa_master", END)
 
-itsm_agent_app = workflow.compile()
+memory = MemorySaver()
+itsm_agent_app = workflow.compile(checkpointer=memory)
 
 # 워크플로우 이미지 생성 및 저장 (FastAPI 서빙용)
 try:

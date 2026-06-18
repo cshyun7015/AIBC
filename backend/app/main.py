@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+from typing import Optional
 from app.agent import itsm_agent_app  # 앞서 만든 에이전트 앱 임포트
 
 # ==========================================
@@ -7,6 +8,7 @@ from app.agent import itsm_agent_app  # 앞서 만든 에이전트 앱 임포트
 # ==========================================
 class IncidentRequest(BaseModel):
     incident_report: str = Field(..., description="사용자가 입력한 장애 현상", example="요청 등록 후 조회 시 500 에러 발생")
+    thread_id: Optional[str] = Field("default-thread", description="대화 흐름을 구분하기 위한 ID")
 
 class IncidentResponse(BaseModel):
     layer: str
@@ -46,8 +48,9 @@ def analyze_incident(request: IncidentRequest):
         # LangGraph 에이전트 파이프라인 실행
         print(f"🚀 [API 요청 수신] 인시던트 분석 시작: {request.incident_report}")
         
-        # State 초기값으로 incident_report 전달
-        final_state = itsm_agent_app.invoke({"incident_report": request.incident_report})
+        # State 초기값으로 incident_report 전달 및 thread_id로 체크포인트(메모리) 설정
+        config = {"configurable": {"thread_id": request.thread_id}}
+        final_state = itsm_agent_app.invoke({"incident_report": request.incident_report}, config=config)
         
         # 결과를 API 응답 규격에 맞게 매핑
         return IncidentResponse(

@@ -21,7 +21,7 @@ echo "------------------------------------------------"
 # curl 실행
 RESPONSE=$(curl -s -X POST "$API_URL" \
   -H "Content-Type: application/json" \
-  -d "{\"incident_report\": \"$INCIDENT_MSG\"}")
+  -d "{\"incident_report\": \"$INCIDENT_MSG\", \"thread_id\": \"test-session-1\"}")
 
 echo "📥 분석 결과:"
 # 시스템에 jq가 설치되어 있다면 JSON을 예쁘게 포맷팅하여 출력
