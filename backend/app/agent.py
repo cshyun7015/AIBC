@@ -177,12 +177,73 @@ def search_knowledge_base(query: str, layer_filter: Optional[str] = None) -> str
     print(f"▶️ [DEBUG] Search complete. Returned {len(top_docs)} docs.")
     return final_output
 
+# [NEW] 모의 로그 및 헬스 체크 상태 생성
+try:
+    from app.utils.log_generator import generate_logs
+    generate_logs()
+except Exception as e:
+    print(f"⚠️ [DEBUG] Failed to generate mock logs: {e}")
+
 @tool
 def check_server_logs(layer: str) -> str:
-    """특정 레이어(BACKEND, DB 등)의 최근 에러 로그를 조회합니다."""
-    return f"[{layer}] Error 500: Database connection timeout at 10:24 AM."
+    """
+    특정 계층(BACKEND, DB, FRONTEND 등)의 실제 에러 로그 파일(.log)을 읽어와서 반환합니다.
+    """
+    layer = layer.upper()
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    if layer == "BACKEND":
+        log_file = os.path.join(base_dir, "data", "logs", "backend.log")
+    elif layer == "DB":
+        log_file = os.path.join(base_dir, "data", "logs", "db.log")
+    elif layer == "FRONTEND":
+        log_file = os.path.join(base_dir, "data", "logs", "frontend.log")
+    else:
+        return f"지원되지 않는 계층입니다: {layer}"
+        
+    if not os.path.exists(log_file):
+        return f"로그 파일을 찾을 수 없습니다: {log_file}"
+        
+    try:
+        with open(log_file, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+            return "".join(lines[-50:]) # 마지막 50줄 반환
+    except Exception as e:
+        return f"로그 읽기 오류: {e}"
 
-tools = [search_knowledge_base, check_server_logs]
+@tool
+def check_service_health(service_name: str) -> str:
+    """
+    특정 서비스(backend, db, frontend)의 실시간 헬스 체크 상태(CPU, 메모리, DB 커넥션 풀 등)를 조회합니다.
+    """
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    health_file = os.path.join(base_dir, "data", "logs", "health_status.json")
+    
+    if not os.path.exists(health_file):
+        return "상태 정보를 찾을 수 없습니다."
+        
+    try:
+        with open(health_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            
+        target = service_name.lower()
+        key_to_check = None
+        if "backend" in target or "백엔드" in target:
+            key_to_check = "backend_server"
+        elif "db" in target or "database" in target or "데이터베이스" in target:
+            key_to_check = "database"
+        elif "front" in target or "프론트" in target:
+            key_to_check = "frontend"
+        else:
+            return f"알 수 없는 서비스입니다: {service_name}. 가능한 값: backend, db, frontend."
+            
+        if key_to_check in data:
+            return json.dumps(data[key_to_check], indent=2, ensure_ascii=False)
+        return "해당 서비스의 상세 상태가 존재하지 않습니다."
+    except Exception as e:
+        return f"상태 조회 실패: {e}"
+
+tools = [search_knowledge_base, check_server_logs, check_service_health]
 
 from langchain_core.messages import ToolMessage
 
