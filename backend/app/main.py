@@ -1,4 +1,6 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from typing import Optional
 from app.agent import itsm_agent_app  # 앞서 만든 에이전트 앱 임포트
@@ -7,8 +9,19 @@ from app.agent import itsm_agent_app  # 앞서 만든 에이전트 앱 임포트
 # 1. API 데이터 모델 (Pydantic)
 # ==========================================
 class IncidentRequest(BaseModel):
-    incident_report: str = Field(..., description="사용자가 입력한 장애 현상", example="요청 등록 후 조회 시 500 에러 발생")
-    thread_id: Optional[str] = Field("default-thread", description="대화 흐름을 구분하기 위한 ID")
+    incident_report: str = Field(
+        ..., 
+        min_length=5, 
+        max_length=2000, 
+        description="사용자가 입력한 장애 현상 (최소 5자 이상)", 
+        example="요청 등록 후 조회 시 500 에러 발생"
+    )
+    thread_id: Optional[str] = Field(
+        "default-thread", 
+        min_length=1,
+        max_length=100,
+        description="대화 흐름을 구분하기 위한 ID"
+    )
 
 class IncidentResponse(BaseModel):
     layer: str
@@ -30,6 +43,28 @@ app = FastAPI(
     description="장애 현상을 입력받아 원인 분석 및 테스트 코드를 생성하는 Multi-Agent 서비스",
     version="1.0.0"
 )
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    errors = []
+    for error in exc.errors():
+        # body.incident_report 같은 loc에서 실제 필드명만 추출
+        field = ".".join(str(loc) for loc in error["loc"][1:]) if len(error["loc"]) > 1 else str(error["loc"][0])
+        msg = error.get("msg", "")
+        # 에러 메시지 친절하게 한글화 (선택사항)
+        if "String should have at least" in msg:
+            msg = "입력값이 너무 짧습니다."
+        elif "String should have at most" in msg:
+            msg = "입력값이 너무 깁니다."
+        errors.append(f"{field}: {msg}")
+    
+    return JSONResponse(
+        status_code=400,
+        content={
+            "detail": "입력 형식이 올바르지 않습니다.",
+            "errors": errors
+        }
+    )
 
 app.add_middleware(
     CORSMiddleware,
