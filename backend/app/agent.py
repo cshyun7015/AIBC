@@ -4,7 +4,6 @@ from dotenv import load_dotenv, find_dotenv
 from typing import TypedDict, List, Annotated
 from langgraph.graph.message import add_messages
 from langchain_core.tools import tool
-from langgraph.prebuilt import ToolNode
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
@@ -109,6 +108,38 @@ def check_server_logs(layer: str) -> str:
     return f"[{layer}] Error 500: Database connection timeout at 10:24 AM."
 
 tools = [search_knowledge_base, check_server_logs]
+
+from langchain_core.messages import ToolMessage
+
+def execute_tools_node(state: IncidentState):
+    messages = state.get("messages", [])
+    if not messages:
+        return {"messages": []}
+        
+    last_message = messages[-1]
+    tool_messages = []
+    
+    if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
+        for tool_call in last_message.tool_calls:
+            tool_name = tool_call.get("name", "")
+            tool_args = tool_call.get("args", {})
+            
+            tool_result = f"Error: Tool {tool_name} not found"
+            for t in tools:
+                if getattr(t, "name", "") == tool_name:
+                    try:
+                        tool_result = str(t.invoke(tool_args))
+                    except Exception as e:
+                        tool_result = f"Error: {str(e)}"
+                    break
+                    
+            tool_messages.append(ToolMessage(
+                content=tool_result,
+                name=tool_name,
+                tool_call_id=tool_call.get("id", "")
+            ))
+            
+    return {"messages": tool_messages}
 
 # ==========================================
 # 3. 에이전트(Nodes) 정의
@@ -279,7 +310,7 @@ def custom_tools_condition(state: IncidentState) -> str:
 workflow = StateGraph(IncidentState)
 workflow.add_node("triage", triage_node)
 workflow.add_node("root_cause_analysis", root_cause_node)
-workflow.add_node("tools", ToolNode(tools))
+workflow.add_node("tools", execute_tools_node)
 workflow.add_node("qa_master", qa_master_node)
 workflow.add_node("escalation_node", escalation_node)
 
