@@ -92,6 +92,7 @@ else:
 # 3. 에이전트(Nodes) 정의
 # ==========================================
 def triage_node(state: IncidentState):
+    print("▶️ [DEBUG] Entered triage_node")
     if USE_MOCK_LLM:
         return {
             "layer": "BACKEND",
