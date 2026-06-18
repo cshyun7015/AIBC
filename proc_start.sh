@@ -9,6 +9,10 @@ echo "🚀 Starting AIBC Local Processes..."
 # 1. Start Backend (FastAPI)
 echo "▶️ Starting Backend..."
 cd backend || exit
+
+echo "📦 Installing backend dependencies..."
+pip install --no-cache-dir -r requirements.txt
+
 # 백그라운드 실행 및 로그 저장
 nohup uvicorn app.main:app --host 0.0.0.0 --port 8000 > backend.log 2>&1 &
 echo $! > backend.pid
