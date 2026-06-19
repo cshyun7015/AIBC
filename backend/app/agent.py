@@ -34,6 +34,8 @@ class IncidentState(TypedDict, total=False):
 # ==========================================
 # Helper: 프롬프트 임포트 및 파서
 # ==========================================
+from app.prompts import TRIAGE_AGENT_PROMPT, ROOT_CAUSE_AGENT_PROMPT, QA_MASTER_AGENT_PROMPT
+
 import re
 import datetime
 
