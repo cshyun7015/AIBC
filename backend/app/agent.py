@@ -34,9 +34,15 @@ class IncidentState(TypedDict, total=False):
 # ==========================================
 # Helper: 프롬프트 임포트 및 파서
 # ==========================================
-from app.prompts import TRIAGE_AGENT_PROMPT, ROOT_CAUSE_AGENT_PROMPT, QA_MASTER_AGENT_PROMPT
-
 import re
+import datetime
+
+def print_trace(agent_name: str, message: str):
+    """콘솔에 시각과 에이전트명을 예쁘게 트레이싱합니다."""
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # 파란색 시각, 노란색 에이전트명으로 콘솔 출력
+    print(f"\033[96m[{now}]\033[0m \033[93m[{agent_name}]\033[0m {message}")
+
 def robust_json_parse(content: str) -> dict:
     """LLM이 반환한 텍스트에서 안전하게 JSON을 추출 및 파싱합니다."""
     try:
@@ -287,7 +293,9 @@ def execute_tools_node(state: IncidentState):
             for t in tools:
                 if getattr(t, "name", "") == tool_name:
                     try:
+                        print_trace("Tool Executor", f"'{tool_name}' 실행 중... (인자: {tool_args})")
                         tool_result = str(t.invoke(tool_args))
+                        print_trace("Tool Executor", f"'{tool_name}' 실행 완료. 결과를 반환합니다.")
                     except Exception as e:
                         tool_result = f"Error: {str(e)}"
                     break
@@ -304,7 +312,7 @@ def execute_tools_node(state: IncidentState):
 # 3. 에이전트(Nodes) 정의
 # ==========================================
 def triage_node(state: IncidentState):
-    print("▶️ [DEBUG] Entered triage_node")
+    print_trace("Triage Agent", f"새로운 인시던트 접수: '{state.get('incident_report')}'")
     if USE_MOCK_LLM:
         return {
             "layer": "BACKEND",
@@ -323,8 +331,11 @@ def triage_node(state: IncidentState):
     response = llm.invoke(messages)
     result = robust_json_parse(response.content)
     
+    layer_result = result.get("layer", "UNKNOWN")
+    print_trace("Triage Agent", f"분류 완료 - 레이어: {layer_result}, 사유: {result.get('reason', '')}")
+    
     return {
-        "layer": result.get("layer", "UNKNOWN"),
+        "layer": layer_result,
         "triage_reason": result.get("reason", ""),
         "search_queries": result.get("search_queries", [])
     }
@@ -334,8 +345,10 @@ def root_cause_node(state: IncidentState):
     
     # 도구 응답 이후 재진입한 경우가 아니면 재시도 카운트 증가
     if state_messages and hasattr(state_messages[-1], 'type') and state_messages[-1].type == 'tool':
+        print_trace("Root-Cause Agent", "도구 실행 결과를 수신하여 분석을 재개합니다.")
         current_retry = state.get("retry_count", 0)
     else:
+        print_trace("Root-Cause Agent", f"원인 분석을 시작합니다. (대상 레이어: {state.get('layer')})")
         current_retry = state.get("retry_count", 0) + 1
 
     llm_with_tools = llm.bind_tools(tools) if not USE_MOCK_LLM else None
@@ -369,9 +382,13 @@ def root_cause_node(state: IncidentState):
     response = llm_with_tools.invoke(invocation_messages)
     
     if hasattr(response, 'tool_calls') and len(response.tool_calls) > 0:
+        for tc in response.tool_calls:
+            print_trace("Root-Cause Agent", f"추가 단서 수집을 위해 도구를 호출합니다: {tc.get('name')}")
         return {"messages": [response], "retry_count": current_retry}
     
     result = robust_json_parse(response.content)
+    confidence_val = str(result.get("confidence", "0%"))
+    print_trace("Root-Cause Agent", f"원인 분석 및 해결책 도출 완료 (신뢰도: {confidence_val})")
     
     return {
         "messages": [response],
@@ -383,6 +400,7 @@ def root_cause_node(state: IncidentState):
     }
 
 def qa_master_node(state: IncidentState):
+    print_trace("QA Master Agent", "제시된 해결책을 검증하기 위한 E2E 테스트 시나리오 및 코드 작성을 시작합니다.")
     if USE_MOCK_LLM:
         mock_scenario = "1. 브라우저 구동 후 localhost 진입\n2. 입력 폼에 더미 장애 증상 작성 후 전송\n3. 화면에 분석 결과(원인, 해결책 등)가 모두 렌더링되었는지 10초 내 확인"
         mock_code = """// [MOCK] Playwright Test Code
@@ -418,12 +436,15 @@ test('요청 등록 및 조회 라이프사이클 검증 테스트', async ({ pa
     response = llm.invoke(messages)
     result = robust_json_parse(response.content)
     
+    print_trace("QA Master Agent", "테스트 시나리오 및 Playwright 코드 작성 완료.")
+    
     return {
         "test_scenario": result.get("test_scenario", ""),
         "playwright_code": result.get("playwright_code", "")
     }
 
 def escalation_node(state: IncidentState):
+    print_trace("System", "분석 신뢰도가 임계치 미달이므로 자동 분석을 중단하고 수동 개입(Escalation) 모드로 전환합니다.")
     return {
         "root_cause": "자동 분석 실패",
         "solution": "신뢰도가 너무 낮아 자동 분석을 완료할 수 없습니다. 수동 개입 및 추가 조사가 필요합니다.",
